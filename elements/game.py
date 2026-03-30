@@ -8,7 +8,7 @@ from elements.player import Player
 
 class GameUI:
     def __init__(self, player):
-        self.PIECE_SIZE = 80  #move the board down by 100 so the preview fits/create an array storing all the balls and redrawing them everytime
+        self.PIECE_SIZE = 80  
         self.OFFSET = 60
         self.PIECE_OFFSET = 20
         self.BOARD_HEIGHT = 700
@@ -56,6 +56,20 @@ class GameUI:
             return self.red_piece
         else:
             return self.yellow_piece
+        
+    def draw_welcome_screen(self):
+        self.screen.fill((255, 255, 255))
+
+        title_font = pygame.font.SysFont('Arial', 60)
+        small_font = pygame.font.SysFont('Arial', 30)
+
+        title = title_font.render("Connect 4", True, (0, 0, 0))
+        info = small_font.render("Press any key to play", True, (0, 0, 0))
+
+        self.screen.blit(title, (250, 250))
+        self.screen.blit(info, (260, 350))
+
+        pygame.display.flip()
 
     def draw_board(self, player = None, row = -1, column = -1, selected_column=None):
         if player is not None and selected_column is not None:
@@ -88,6 +102,22 @@ class Game:
     self._players = [Player(0), Player(1)]
     self._board = Board()
     self._gameUI = GameUI(self._players[0])
+
+  def welcome_loop(self):
+    waiting = True
+
+    while waiting:
+        self._gameUI.draw_welcome_screen()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            elif event.type == pygame.KEYDOWN:
+                waiting = False
+                
+    self._gameUI.init_ui(self.get_current_player())
 
   def game_loop(self):
     
