@@ -1,0 +1,181 @@
+import pygame
+from elements.board import Board
+from elements.player import Player
+
+#try making the balls fall down instead of just appearing in the right place, maybe with some animation?
+#if an incorrect move is performed make the background of the screen pulsate in red for a moment, to indicate the error
+#display our names, indexes numbers and title in a welcoming screen with a play button that takes us to the main game screen, maybe have some welcoming animation, like the pieces falling down one by one
+
+class GameUI:
+    def __init__(self, player):
+        self.PIECE_SIZE = 80  #move the board down by 100 so the preview fits/create an array storing all the balls and redrawing them everytime
+        self.OFFSET = 60
+        self.PIECE_OFFSET = 20
+        self.BOARD_HEIGHT = 700
+        self.PIECE_RADIUS = int(self.PIECE_SIZE / 2)
+
+        pygame.init()
+        pygame.font.init()
+        pygame.display.set_caption('Connet 4')
+
+        self.screen = pygame.display.set_mode((800, 800))
+        self.board_img = pygame.image.load("./graphics/board.png")
+        self.font = pygame.font.SysFont('Arial', 30)
+        self.yellow_piece = pygame.image.load("./graphics/wilson.png")
+        self.red_piece = pygame.image.load("./graphics/house1.png")
+       
+        self.init_ui(player)
+    
+    def init_ui(self, player):
+        self.screen.fill((255, 255, 255))
+        self.draw_board()
+        self.draw_player_info(player)
+    
+    def draw_player_info(self, player):
+        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 50], 0)
+
+        text = "Current Player: " + player.get_name()
+        
+        text = self.font.render(text, True, (0,0,0))
+        self.screen.blit(text, (50, 10))
+
+        pygame.display.flip()
+    
+    def draw_player_won(self, player):
+        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 50], 0)
+
+        text = player.get_name() + " won! Restart (y | n)?"
+        
+        text = self.font.render(text, True, (0,0,0))
+        self.screen.blit(text, (50, 10))
+
+        pygame.display.flip()
+
+    def get_piece_image(self, player):
+        if player.get_id() == 0:
+            return self.red_piece
+        else:
+            return self.yellow_piece
+
+    def draw_board(self, player = None, row = -1, column = -1, selected_column=None):
+        if player is not None and selected_column is not None:
+
+            pygame.draw.rect(self.screen, (255,255,255), [0, self.OFFSET, 800, 80], 0)
+        
+            piece_img = self.get_piece_image(player)
+            self.screen.blit(piece_img,
+              (self.OFFSET + self.PIECE_OFFSET * selected_column + self.PIECE_SIZE * selected_column, #clear the screen
+              self.OFFSET + 40 - self.PIECE_RADIUS)
+            )
+        
+        if player is not None and row > -1:
+            
+            piece_img = self.get_piece_image(player)
+            self.screen.blit(piece_img,
+              (self.OFFSET + self.PIECE_OFFSET * column + self.PIECE_SIZE * column, #clear the screen
+              self.BOARD_HEIGHT - self.PIECE_SIZE * row - self.PIECE_OFFSET * row - self.PIECE_RADIUS)
+            )
+    
+        self.screen.blit(self.board_img, (self.OFFSET - 10, self.OFFSET + 90))
+       
+        pygame.display.flip()
+
+class Game:
+
+  def __init__(self):
+    self._current_player = 0
+    self._selected_column = 0
+    self._players = [Player(0), Player(1)]
+    self._board = Board()
+    self._gameUI = GameUI(self._players[0])
+
+  def game_loop(self):
+    
+    update_ui = False
+    done = False
+    player_won = False
+
+    row = -1
+    column = -1
+
+    while not done:
+
+      update_ui = False
+
+      # check for player input events
+      for event in pygame.event.get():
+
+        if event.type == pygame.QUIT:
+          done = True
+
+        elif event.type == pygame.KEYUP:
+
+          if player_won:
+
+            # N key
+            if event.key == 110:
+              done = True
+
+            # Y key
+            elif event.key in [121,122]:
+              
+              player_won = False
+              done = False
+              self.restart()
+
+          else:
+
+            # Try to insert to a column
+            if event.key == pygame.K_LEFT:
+                self._selected_column = max(0, self._selected_column - 1)
+
+          # RIGHT arrow
+            elif event.key == pygame.K_RIGHT:
+                self._selected_column = min(6, self._selected_column + 1)
+
+            # DROP (DOWN arrow or ENTER)
+            elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
+
+                column = self._selected_column
+                row = self.get_next_open_row(column)
+
+                if row > -1:
+                    player_won = self.winning_move(self.get_current_player())
+                    update_ui = True
+
+      self._gameUI.draw_board(self.get_current_player(),-1, -1, self._selected_column)
+
+      # UI has to be updated
+      if update_ui:
+        self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
+
+        if player_won:
+          self._gameUI.draw_player_won(self.get_current_player())
+        else:
+          self.switch_player()
+          self._gameUI.draw_player_info(self.get_current_player())
+        
+
+  def switch_player(self):
+    self._current_player += 1
+    self._current_player = self._current_player % 2
+
+  def restart(self):
+    self._board.clear()
+    self._gameUI.init_ui(self.get_current_player())
+
+  def get_next_open_row(self, column):
+    player=self.get_current_player()
+    return self._board.get_next_open_row(player, column)
+
+  def winning_move(self, player):
+    return self._board.winning_move(player)
+
+  def get_board(self):
+    return self._board
+
+  def get_player(self, id):
+    return self._players[id]
+
+  def get_current_player(self):
+      return self._players[self._current_player]

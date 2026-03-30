@@ -1,4 +1,3 @@
-
 import numpy as np
 
 ROW_COUNT = 6
