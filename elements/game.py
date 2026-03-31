@@ -1,6 +1,8 @@
 import pygame
 from elements.board import Board
 from elements.player import Player
+import time
+
 
 #try making the balls fall down instead of just appearing in the right place, maybe with some animation?
 #if an incorrect move is performed make the background of the screen pulsate in red for a moment, to indicate the error
@@ -16,23 +18,31 @@ class GameUI:
 
         pygame.init()
         pygame.font.init()
-        pygame.display.set_caption('Connet 4')
+        pygame.display.set_caption('Connect 4')
 
         self.screen = pygame.display.set_mode((800, 800))
         self.board_img = pygame.image.load("./graphics/board.png")
         self.font = pygame.font.SysFont('Arial', 30)
         self.yellow_piece = pygame.image.load("./graphics/wilson.png")
         self.red_piece = pygame.image.load("./graphics/house1.png")
-       
+
+        self.welcome_bg = pygame.image.load("./graphics/welcome.png")
+        self.welcome_bg = pygame.transform.scale(self.welcome_bg, (800, 800))
+
+        self.background = pygame.image.load("./graphics/background.png")
+        self.background = pygame.transform.scale(self.background, (800, 800))
         self.init_ui(player)
-    
+
+        self.blink_timer = 0
+        self.show_text = True
+
     def init_ui(self, player):
-        self.screen.fill((255, 255, 255))
+        self.screen.blit(self.background, (0, 0))
         self.draw_board()
         self.draw_player_info(player)
     
     def draw_player_info(self, player):
-        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 50], 0)
+        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
 
         text = "Current Player: " + player.get_name()
         
@@ -58,40 +68,52 @@ class GameUI:
             return self.yellow_piece
         
     def draw_welcome_screen(self):
-        self.screen.fill((255, 255, 255))
+        self.screen.blit(self.welcome_bg, (0, 0))
 
         title_font = pygame.font.SysFont('Arial', 60)
         small_font = pygame.font.SysFont('Arial', 30)
+        tiny_font = pygame.font.SysFont('Arial', 15)
 
         title = title_font.render("Connect 4", True, (0, 0, 0))
         info = small_font.render("Press any key to play", True, (0, 0, 0))
+        authors = tiny_font.render("Created by: Natalia Sarbiewska & Maria Galkowska", True, (0, 0, 0))
 
-        self.screen.blit(title, (250, 250))
-        self.screen.blit(info, (260, 350))
+        self.screen.blit(authors, (30, 750))
+        self.screen.blit(title, (300, 300))
+
+        self.blink_timer += 1
+        if self.blink_timer >= 30:  # speed
+            self.show_text = not self.show_text
+            self.blink_timer = 0
+
+        if self.show_text:
+            self.screen.blit(info, (297, 370))
 
         pygame.display.flip()
 
     def draw_board(self, player = None, row = -1, column = -1, selected_column=None):
+
+        #self.screen.blit(self.background, (0, 0))
         if player is not None and selected_column is not None:
 
             pygame.draw.rect(self.screen, (255,255,255), [0, self.OFFSET, 800, 80], 0)
-        
+
             piece_img = self.get_piece_image(player)
             self.screen.blit(piece_img,
               (self.OFFSET + self.PIECE_OFFSET * selected_column + self.PIECE_SIZE * selected_column, #clear the screen
               self.OFFSET + 40 - self.PIECE_RADIUS)
             )
-        
+
         if player is not None and row > -1:
-            
+
             piece_img = self.get_piece_image(player)
             self.screen.blit(piece_img,
               (self.OFFSET + self.PIECE_OFFSET * column + self.PIECE_SIZE * column, #clear the screen
               self.BOARD_HEIGHT - self.PIECE_SIZE * row - self.PIECE_OFFSET * row - self.PIECE_RADIUS)
             )
-    
+
         self.screen.blit(self.board_img, (self.OFFSET - 10, self.OFFSET + 90))
-       
+
         pygame.display.flip()
 
 class Game:
