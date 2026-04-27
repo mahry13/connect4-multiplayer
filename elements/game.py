@@ -156,6 +156,8 @@ class Game:
       row = -1
       column = -1
 
+      self.start_game_music()
+
       while not done:
           update_ui = False
 
@@ -220,6 +222,8 @@ class Game:
 
   def restart(self):
     self._board.clear()
+    pygame.mixer.music.fadeout(1000)
+    self.start_game_music()
     self._gameUI.init_ui(self.get_current_player())
 
   def get_next_open_row(self, column):
@@ -238,16 +242,22 @@ class Game:
   def get_current_player(self):
       return self._players[self._current_player]
 
-  def start_welcome_music(track):
-    pygame.mixer.init()
-    pygame.mixer.music.load("../house_intro.mp3")
-    pygame.mixer.music.play(-1,0.0)
   def start_welcome_music(self):
         if not pygame.mixer.get_init():
             pygame.mixer.init()
      
         try:
             pygame.mixer.music.load("house_intro.mp3")
+            pygame.mixer.music.play(-1, 0.0)
+        except pygame.error as e:
+            print(f"Could not load music: {e}")
+
+  def start_game_music(self):
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+     
+        try:
+            pygame.mixer.music.load("house_game.mp3")
             pygame.mixer.music.play(-1, 0.0)
         except pygame.error as e:
             print(f"Could not load music: {e}")
