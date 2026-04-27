@@ -1,4 +1,6 @@
 import pygame
+
+from client import Network
 from elements.board import Board
 from elements.player import Player
 import time
@@ -119,6 +121,9 @@ class GameUI:
 class Game:
 
   def __init__(self):
+    self.network = Network()
+    self.local_player_id = self.network.player_id
+
     self._current_player = 0
     self._selected_column = 0
     self._players = [Player(0), Player(1)]
@@ -142,71 +147,69 @@ class Game:
     self._gameUI.init_ui(self.get_current_player())
 
   def game_loop(self):
-    
-    update_ui = False
-    done = False
-    player_won = False
-
-    row = -1
-    column = -1
-
-    while not done:
-
       update_ui = False
+      done = False
+      player_won = False
+      row = -1
+      column = -1
 
-      # check for player input events
-      for event in pygame.event.get():
+      while not done:
+          update_ui = False
 
-        if event.type == pygame.QUIT:
-          done = True
+          # Listen for opponent's move
+          if self._current_player != self.local_player_id and not player_won:
+              incoming_move = self.network.receive()
+              if incoming_move:
+                  column = incoming_move.get("column")
+                  row = self.get_next_open_row(column)
+                  if row > -1:
+                      self._selected_column = column
+                      player_won = self.winning_move(self.get_current_player())
+                      update_ui = True
+          # check for player input events
+          for event in pygame.event.get():
+              if event.type == pygame.QUIT:
+                  done = True
 
-        elif event.type == pygame.KEYUP:
+              elif event.type == pygame.KEYUP:
+                  if player_won:
+                      # N key
+                      if event.key == 110:
+                          done = True
+                      # Y key
+                      elif event.key in [121, 122]:
+                          player_won = False
+                          done = False
+                          self.restart()
+                  else:
+                      # Only allow keyboard input if it's our turn
+                      if self._current_player == self.local_player_id:
+                          # Try to insert to a column
+                          if event.key == pygame.K_LEFT:
+                              self._selected_column = max(0, self._selected_column - 1)
+                          # RIGHT arrow
+                          elif event.key == pygame.K_RIGHT:
+                              self._selected_column = min(6, self._selected_column + 1)
+                          # DROP (DOWN arrow or ENTER)
+                          elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
+                              column = self._selected_column
+                              row = self.get_next_open_row(column)
 
-          if player_won:
+                              if row > -1:
+                                  self.network.send({"column": column})
+                                  player_won = self.winning_move(self.get_current_player())
+                                  update_ui = True
 
-            # N key
-            if event.key == 110:
-              done = True
+          self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
 
-            # Y key
-            elif event.key in [121,122]:
-              
-              player_won = False
-              done = False
-              self.restart()
-
-          else:
-
-            # Try to insert to a column
-            if event.key == pygame.K_LEFT:
-                self._selected_column = max(0, self._selected_column - 1)
-
-          # RIGHT arrow
-            elif event.key == pygame.K_RIGHT:
-                self._selected_column = min(6, self._selected_column + 1)
-
-            # DROP (DOWN arrow or ENTER)
-            elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
-
-                column = self._selected_column
-                row = self.get_next_open_row(column)
-
-                if row > -1:
-                    player_won = self.winning_move(self.get_current_player())
-                    update_ui = True
-
-      self._gameUI.draw_board(self.get_current_player(),-1, -1, self._selected_column)
-
-      # UI has to be updated
-      if update_ui:
-        self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
-
-        if player_won:
-          self._gameUI.draw_player_won(self.get_current_player())
-        else:
-          self.switch_player()
-          self._gameUI.draw_player_info(self.get_current_player())
-        
+          # UI has to be updated
+          if update_ui:
+              self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
+              if player_won:
+                  self._gameUI.draw_player_won(self.get_current_player())
+              else:
+                  self.switch_player()
+                  self._gameUI.draw_player_info(self.get_current_player())
 
   def switch_player(self):
     self._current_player += 1
