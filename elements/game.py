@@ -131,6 +131,8 @@ class Game:
     self._gameUI = GameUI(self._players[0])
 
   def welcome_loop(self):
+
+    self.start_welcome_music()
     waiting = True
 
     while waiting:
@@ -142,6 +144,7 @@ class Game:
                 exit()
 
             elif event.type == pygame.KEYDOWN:
+                pygame.mixer.music.fadeout(1000)
                 waiting = False
                 
     self._gameUI.init_ui(self.get_current_player())
@@ -234,3 +237,17 @@ class Game:
 
   def get_current_player(self):
       return self._players[self._current_player]
+
+  def start_welcome_music(track):
+    pygame.mixer.init()
+    pygame.mixer.music.load("../house_intro.mp3")
+    pygame.mixer.music.play(-1,0.0)
+  def start_welcome_music(self):
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+     
+        try:
+            pygame.mixer.music.load("house_intro.mp3")
+            pygame.mixer.music.play(-1, 0.0)
+        except pygame.error as e:
+            print(f"Could not load music: {e}")
