@@ -118,6 +118,19 @@ class GameUI:
 
         pygame.display.flip()
 
+    def draw_disconnect(self):
+        pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
+        text = self.font.render("Opponent disconnected! Press 'N' to quit.", True, (255, 0, 0))
+        self.screen.blit(text, (50, 10))
+        pygame.display.flip()
+
+    def draw_waiting(self):
+        pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
+        text = self.font.render("Waiting for opponent to connect...", True, (0, 0, 255))
+        self.screen.blit(text, (50, 10))
+        pygame.display.flip()
+
+
 class Game:
 
   def __init__(self):
@@ -128,7 +141,8 @@ class Game:
     self._selected_column = 0
     self._players = [Player(0), Player(1)]
     self._board = Board()
-    self._gameUI = GameUI(self._players[0])
+    self.game_ready = False
+    self._gameUI = GameUI(self._players[self.local_player_id])
 
   def welcome_loop(self):
 
@@ -150,45 +164,54 @@ class Game:
     self._gameUI.init_ui(self.get_current_player())
 
   def game_loop(self):
-      update_ui = False
+      update_ui = True
       done = False
       player_won = False
+      opponent_disconnected = False
       row = -1
       column = -1
 
       self.start_game_music()
 
       while not done:
-          update_ui = False
-
           # Listen for opponent's move
-          if self._current_player != self.local_player_id and not player_won:
-              incoming_move = self.network.receive()
-              if incoming_move:
-                  column = incoming_move.get("column")
-                  row = self.get_next_open_row(column)
-                  if row > -1:
-                      self._selected_column = column
-                      player_won = self.winning_move(self.get_current_player())
+          if not opponent_disconnected:
+              incoming_data = self.network.receive()
+              if incoming_data:
+                  if incoming_data.get("type") == "disconnect":
+                      opponent_disconnected = True
                       update_ui = True
+                  elif incoming_data.get("type") == "ready":
+                      self.game_ready = True
+                      opponent_disconnected = False
+                      update_ui = True
+                  elif self._current_player != self.local_player_id and not player_won:
+                      column = incoming_data.get("column")
+                      if column is not None:
+                          row = self.get_next_open_row(column)
+                          if row > -1:
+                              self._selected_column = column
+                              player_won = self.winning_move(self.get_current_player())
+                              update_ui = True
           # check for player input events
           for event in pygame.event.get():
               if event.type == pygame.QUIT:
                   done = True
 
               elif event.type == pygame.KEYUP:
-                  if player_won:
+                  if player_won or opponent_disconnected:
                       # N key
                       if event.key == 110:
                           done = True
                       # Y key
-                      elif event.key in [121, 122]:
+                      elif event.key in [121, 122] and not opponent_disconnected:
                           player_won = False
                           done = False
                           self.restart()
+                          update_ui = True
                   else:
                       # Only allow keyboard input if it's our turn
-                      if self._current_player == self.local_player_id:
+                      if self.game_ready and self._current_player == self.local_player_id:
                           # Try to insert to a column
                           if event.key == pygame.K_LEFT:
                               self._selected_column = max(0, self._selected_column - 1)
@@ -210,11 +233,18 @@ class Game:
           # UI has to be updated
           if update_ui:
               self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
-              if player_won:
+              if opponent_disconnected:
+                  self._gameUI.draw_disconnect()
+              elif not self.game_ready:
+                  self._gameUI.draw_waiting()
+              elif player_won:
                   self._gameUI.draw_player_won(self.get_current_player())
               else:
-                  self.switch_player()
+                  if row > -1:
+                      self.switch_player()
+                      row = -1
                   self._gameUI.draw_player_info(self.get_current_player())
+              update_ui = False
 
   def switch_player(self):
     self._current_player += 1
