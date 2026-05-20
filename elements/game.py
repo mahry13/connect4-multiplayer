@@ -1,14 +1,12 @@
 import pygame
-
+import time
 from client import Network
 from elements.board import Board
 from elements.player import Player
-import time
 
-
-#try making the balls fall down instead of just appearing in the right place, maybe with some animation?
-#if an incorrect move is performed make the background of the screen pulsate in red for a moment, to indicate the error
-#display our names, indexes numbers and title in a welcoming screen with a play button that takes us to the main game screen, maybe have some welcoming animation, like the pieces falling down one by one
+# try making the balls fall down instead of just appearing in the right place, maybe with some animation?
+# if an incorrect move is performed make the background of the screen pulsate in red for a moment, to indicate the error
+# display our names, indexes numbers and title in a welcoming screen with a play button that takes us to the main game screen, maybe have some welcoming animation, like the pieces falling down one by one
 
 class GameUI:
     def __init__(self, player):
@@ -31,6 +29,12 @@ class GameUI:
         self.welcome_bg = pygame.image.load("./graphics/welcome.png")
         self.welcome_bg = pygame.transform.scale(self.welcome_bg, (800, 800))
 
+        self.win_house = pygame.image.load("./graphics/win_house.jpg")
+        self.win_house = pygame.transform.scale(self.win_house, (800, 800))
+
+        self.win_wilson = pygame.image.load("./graphics/win_wilson.jpg")
+        self.win_wilson = pygame.transform.scale(self.win_wilson, (800, 800))
+
         self.background = pygame.image.load("./graphics/background.png")
         self.background = pygame.transform.scale(self.background, (800, 800))
         self.init_ui(player)
@@ -45,24 +49,37 @@ class GameUI:
     
     def draw_player_info(self, player):
         pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
-
         text = "Current Player: " + player.get_name()
-        
         text = self.font.render(text, True, (0,0,0))
         self.screen.blit(text, (50, 10))
-
         pygame.display.flip()
     
     def draw_player_won(self, player):
-        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 50], 0)
-
+        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
         text = player.get_name() + " won! Restart (y | n)?"
-        
         text = self.font.render(text, True, (0,0,0))
         self.screen.blit(text, (50, 10))
-
         pygame.display.flip()
 
+    def draw_win_screen(self, winner_player):
+        # 1. Clean the upper row spacing area
+        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
+
+        # 2. Render only the specific image for the winning player (No regular board drawn here)
+        if winner_player.get_id() == 0:
+            self.screen.blit(self.win_house, (0, 0))
+        else:
+            self.screen.blit(self.win_wilson, (0, 0))
+        
+        # 3. Draw the user prompt text overlay clear zone at the top
+        pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
+        
+        text = f"{winner_player.get_name()} wins! Play again? (Y / N)"
+        rendered_text = self.font.render(text, True, (0, 0, 0))
+        self.screen.blit(rendered_text, (50, 10))
+        
+        pygame.display.flip()
+        
     def get_piece_image(self, player):
         if player.get_id() == 0:
             return self.red_piece
@@ -94,198 +111,215 @@ class GameUI:
         pygame.display.flip()
 
     def draw_board(self, player = None, row = -1, column = -1, selected_column=None):
-
-        #self.screen.blit(self.background, (0, 0))
         if player is not None and selected_column is not None:
-
-            pygame.draw.rect(self.screen, (255,255,255), [0, self.OFFSET, 800, 80], 0)
-
+            pygame.draw.rect(self.screen, (255,255,255), [0, self.OFFSET, 800, 80], 0) #[0, self.offset, 800, 80]
             piece_img = self.get_piece_image(player)
             self.screen.blit(piece_img,
-              (self.OFFSET + self.PIECE_OFFSET * selected_column + self.PIECE_SIZE * selected_column, #clear the screen
+              (self.OFFSET + self.PIECE_OFFSET * selected_column + self.PIECE_SIZE * selected_column, 
               self.OFFSET + 40 - self.PIECE_RADIUS)
             )
 
         if player is not None and row > -1:
-
             piece_img = self.get_piece_image(player)
             self.screen.blit(piece_img,
-              (self.OFFSET + self.PIECE_OFFSET * column + self.PIECE_SIZE * column, #clear the screen
+              (self.OFFSET + self.PIECE_OFFSET * column + self.PIECE_SIZE * column, 
               self.BOARD_HEIGHT - self.PIECE_SIZE * row - self.PIECE_OFFSET * row - self.PIECE_RADIUS)
             )
 
         self.screen.blit(self.board_img, (self.OFFSET - 10, self.OFFSET + 90))
-
         pygame.display.flip()
 
     def draw_disconnect(self):
-        pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
-        text = self.font.render("Opponent disconnected! Press 'N' to quit.", True, (255, 0, 0))
+        pygame.draw.rect(self.screen, (255, 0, 0), [0, 0, 800, 140], 0)
+        text = self.font.render("Opponent disconnected! Press 'N' to quit.", True, (255, 255, 255))
         self.screen.blit(text, (50, 10))
         pygame.display.flip()
 
     def draw_waiting(self):
-        pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
-        text = self.font.render("Waiting for opponent to connect...", True, (0, 0, 255))
+        pygame.draw.rect(self.screen, (0, 0, 255), [0, 0, 800, 100], 0)
+        text = self.font.render("Waiting for opponent to connect...", True, (255, 255, 255))
         self.screen.blit(text, (50, 10))
         pygame.display.flip()
 
 
 class Game:
+    def __init__(self):
+        self.network = Network()
+        self.local_player_id = self.network.player_id
 
-  def __init__(self):
-    self.network = Network()
-    self.local_player_id = self.network.player_id
+        self._current_player = 0
+        self._selected_column = 0
+        self._players = [Player(0), Player(1)]
+        self._board = Board()
+        self.game_ready = False
+        self._gameUI = GameUI(self._players[self.local_player_id])
 
-    self._current_player = 0
-    self._selected_column = 0
-    self._players = [Player(0), Player(1)]
-    self._board = Board()
-    self.game_ready = False
-    self._gameUI = GameUI(self._players[self.local_player_id])
+    def welcome_loop(self):
+        self.start_welcome_music()
+        waiting = True
 
-  def welcome_loop(self):
+        while waiting:
+            self._gameUI.draw_welcome_screen()
 
-    self.start_welcome_music()
-    waiting = True
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+                elif event.type == pygame.KEYDOWN:
+                    pygame.mixer.music.fadeout(1000)
+                    waiting = False
+                    
+        self._gameUI.init_ui(self.get_current_player())         
 
-    while waiting:
-        self._gameUI.draw_welcome_screen()
+    def game_loop(self):
+        update_ui = True
+        done = False
+        player_won = False
+        opponent_disconnected = False
+        row = -1
+        column = -1
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
+        self.start_game_music()
 
-            elif event.type == pygame.KEYDOWN:
-                pygame.mixer.music.fadeout(1000)
-                waiting = False
-                
-    self._gameUI.init_ui(self.get_current_player())
+        while not done:
+            # --- 1. LISTEN FOR OPPONENT'S DATA ---
+            if not opponent_disconnected:
+                incoming_data = self.network.receive()
+                if incoming_data:
+                    if incoming_data.get("type") == "disconnect":
+                        opponent_disconnected = True
+                        update_ui = True
+                    elif incoming_data.get("type") == "ready":
+                        self.game_ready = True
+                        opponent_disconnected = False
+                        update_ui = True
+                    
+                    # Opponent requested a restart after the game ended
+                    elif incoming_data.get("type") == "restart_request":
+                        player_won = False
+                        self.restart()
+                        # Reset loop-local coordinates so ghost tokens do not draw!
+                        row = -1
+                        column = -1
+                        
+                        # Tell the opponent we are reset, but we still wait for them to see our screen sync!
+                        self.network.send({"type": "ready"})
+                        self.game_ready = True
+                        update_ui = True
+                        
+                    elif self._current_player != self.local_player_id and not player_won:
+                        column = incoming_data.get("column")
+                        if column is not None:
+                            row = self.get_next_open_row(column)
+                            if row > -1:
+                                self._selected_column = column
+                                player_won = self.winning_move(self.get_current_player())
+                                update_ui = True
 
-  def game_loop(self):
-      update_ui = True
-      done = False
-      player_won = False
-      opponent_disconnected = False
-      row = -1
-      column = -1
+            # --- 2. HANDLE LOCAL PLAYER INPUT EVENTS ---
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
 
-      self.start_game_music()
+                elif event.type == pygame.KEYUP:
+                    if player_won or opponent_disconnected:
+                        # N key to quit
+                        if event.key == 110:
+                            done = True
+                        # Y key to request restart
+                        elif event.key in [121, 122] and not opponent_disconnected:
+                            player_won = False
+                            self.game_ready = False  # Block local input and display local waiting banner
+                            
+                            # Clean up local loop variables BEFORE restarting to clear ghost graphics
+                            row = -1
+                            column = -1
+                            
+                            # Tell the other player's client to clear its engine too
+                            self.network.send({"type": "restart_request"})
+                            
+                            self.restart()
+                            update_ui = True
+                    else:
+                        # Only allow keyboard input if the game is completely unblocked and it is OUR turn
+                        if self.game_ready and self._current_player == self.local_player_id:
+                            # LEFT arrow
+                            if event.key == pygame.K_LEFT:
+                                self._selected_column = max(0, self._selected_column - 1)
+                            # RIGHT arrow
+                            elif event.key == pygame.K_RIGHT:
+                                self._selected_column = min(6, self._selected_column + 1)
+                            # DROP (DOWN arrow or ENTER)
+                            elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
+                                column = self._selected_column
+                                row = self.get_next_open_row(column)
 
-      while not done:
-          # Listen for opponent's move
-          if not opponent_disconnected:
-              incoming_data = self.network.receive()
-              if incoming_data:
-                  if incoming_data.get("type") == "disconnect":
-                      opponent_disconnected = True
-                      update_ui = True
-                  elif incoming_data.get("type") == "ready":
-                      self.game_ready = True
-                      opponent_disconnected = False
-                      update_ui = True
-                  elif self._current_player != self.local_player_id and not player_won:
-                      column = incoming_data.get("column")
-                      if column is not None:
-                          row = self.get_next_open_row(column)
-                          if row > -1:
-                              self._selected_column = column
-                              player_won = self.winning_move(self.get_current_player())
-                              update_ui = True
-          # check for player input events
-          for event in pygame.event.get():
-              if event.type == pygame.QUIT:
-                  done = True
+                                if row > -1:
+                                    self.network.send({"column": column})
+                                    player_won = self.winning_move(self.get_current_player())
+                                    update_ui = True
 
-              elif event.type == pygame.KEYUP:
-                  if player_won or opponent_disconnected:
-                      # N key
-                      if event.key == 110:
-                          done = True
-                      # Y key
-                      elif event.key in [121, 122] and not opponent_disconnected:
-                          player_won = False
-                          done = False
-                          self.restart()
-                          update_ui = True
-                  else:
-                      # Only allow keyboard input if it's our turn
-                      if self.game_ready and self._current_player == self.local_player_id:
-                          # Try to insert to a column
-                          if event.key == pygame.K_LEFT:
-                              self._selected_column = max(0, self._selected_column - 1)
-                          # RIGHT arrow
-                          elif event.key == pygame.K_RIGHT:
-                              self._selected_column = min(6, self._selected_column + 1)
-                          # DROP (DOWN arrow or ENTER)
-                          elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
-                              column = self._selected_column
-                              row = self.get_next_open_row(column)
+            # Only track active hover/preview indicators when a player hasn't already won!
+            if not player_won and not opponent_disconnected and self.game_ready:
+                self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
 
-                              if row > -1:
-                                  self.network.send({"column": column})
-                                  player_won = self.winning_move(self.get_current_player())
-                                  update_ui = True
+            # --- 3. UI STATE UPDATES ---
+            if update_ui:
+                if opponent_disconnected:
+                    self._gameUI.draw_disconnect()
+                elif not self.game_ready:
+                    self._gameUI.draw_waiting()
+                elif player_won:
+                    # Draw final array placements
+                    self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
+                    # Render your clean house/wilson custom image card layer
+                    self._gameUI.draw_win_screen(self.get_current_player())
+                else:
+                    self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
+                    if row > -1:
+                        self.switch_player()
+                        row = -1
+                    self._gameUI.draw_player_info(self.get_current_player())
+                update_ui = False
 
-          self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
+    def switch_player(self):
+        self._current_player += 1
+        self._current_player = self._current_player % 2
 
-          # UI has to be updated
-          if update_ui:
-              self._gameUI.draw_board(self.get_current_player(), row, column, self._selected_column)
-              if opponent_disconnected:
-                  self._gameUI.draw_disconnect()
-              elif not self.game_ready:
-                  self._gameUI.draw_waiting()
-              elif player_won:
-                  self._gameUI.draw_player_won(self.get_current_player())
-              else:
-                  if row > -1:
-                      self.switch_player()
-                      row = -1
-                  self._gameUI.draw_player_info(self.get_current_player())
-              update_ui = False
+    def restart(self):
+        self._board.clear()
+        pygame.mixer.music.fadeout(1000)
+        self.start_game_music()
+        self._gameUI.init_ui(self.get_current_player())
 
-  def switch_player(self):
-    self._current_player += 1
-    self._current_player = self._current_player % 2
+    def get_next_open_row(self, column):
+        player = self.get_current_player()
+        return self._board.get_next_open_row(player, column)
 
-  def restart(self):
-    self._board.clear()
-    pygame.mixer.music.fadeout(1000)
-    self.start_game_music()
-    self._gameUI.init_ui(self.get_current_player())
+    def winning_move(self, player):
+        return self._board.winning_move(player)
 
-  def get_next_open_row(self, column):
-    player=self.get_current_player()
-    return self._board.get_next_open_row(player, column)
+    def get_board(self):
+        return self._board
 
-  def winning_move(self, player):
-    return self._board.winning_move(player)
+    def get_player(self, id):
+        return self._players[id]
 
-  def get_board(self):
-    return self._board
+    def get_current_player(self):
+        return self._players[self._current_player]
 
-  def get_player(self, id):
-    return self._players[id]
-
-  def get_current_player(self):
-      return self._players[self._current_player]
-
-  def start_welcome_music(self):
+    def start_welcome_music(self):
         if not pygame.mixer.get_init():
             pygame.mixer.init()
-     
         try:
             pygame.mixer.music.load("house_intro.mp3")
             pygame.mixer.music.play(-1, 0.0)
         except pygame.error as e:
             print(f"Could not load music: {e}")
 
-  def start_game_music(self):
+    def start_game_music(self):
         if not pygame.mixer.get_init():
             pygame.mixer.init()
-     
         try:
             pygame.mixer.music.load("house_game.mp3")
             pygame.mixer.music.play(-1, 0.0)
