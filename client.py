@@ -5,7 +5,8 @@ import json
 class Network:
     def __init__(self):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.addr = ('127.0.0.1', 5555)
+        self.server_ip = '192.168.1.205' # use ipconfig in a diff terminal to find the IP address of the local machine(the server machine)
+        self.addr = (self.server_ip, 5555)
         self.player_id = self.connect()
 
     def connect(self):
