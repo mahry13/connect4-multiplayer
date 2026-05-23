@@ -307,7 +307,7 @@ class Game:
         if not pygame.mixer.get_init():
             pygame.mixer.init()
         try:
-            pygame.mixer.music.load("house_intro.mp3")
+            pygame.mixer.music.load("./sounds/house_intro.mp3")
             pygame.mixer.music.play(-1, 0.0)
         except pygame.error as e:
             print(f"Could not load music: {e}")
@@ -316,7 +316,7 @@ class Game:
         if not pygame.mixer.get_init():
             pygame.mixer.init()
         try:
-            pygame.mixer.music.load("house_game.mp3")
+            pygame.mixer.music.load("./sounds/house_game.mp3")
             pygame.mixer.music.play(-1, 0.0)
         except pygame.error as e:
             print(f"Could not load music: {e}")
