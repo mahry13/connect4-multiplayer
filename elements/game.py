@@ -194,15 +194,12 @@ class Game:
                         update_ui = True
                     
                     # handle a restart request
-                    elif msg_type == "restart_request":
-                        # clear board and reset local game state
-                        self._board.clear()
-                        self._current_player = 0
-                        self._selected_column = 0
-
-                        self.game_ready = False # back to waiting screen
-                        self.welcome_loop()  # show welcome screen and wait for ready signal again
-                        return
+                    elif incoming_data.get("type") == "restart_request":
+                        player_won = False
+                        done = False
+                        self._current_player = 0  # reset turn to player 0
+                        self.restart()
+                        update_ui = True
                         
                     elif msg_type == "error":
                         error_msg = incoming_data.get("message")
@@ -239,20 +236,9 @@ class Game:
                     if player_won or opponent_disconnected:
                         if event.key == 110:
                             done = True
-                        
+
                         elif event.key in [121, 122] and not opponent_disconnected:
-                            # tell opponent to restart too
                             self.network.send({"type": "restart_request"})
-                            
-                            # reset local board
-                            self._board.clear()
-                            self._selected_column = 0
-                            player_won = False
-                            
-                            # wait for them to press Y too
-                            self.game_ready = False
-                            self.welcome_loop()
-                            return
 
                     else:
                         # Only allow keyboard input if the game is completely unblocked and it is OUR turn
@@ -293,6 +279,8 @@ class Game:
         self.start_game_music()
         self._current_player = 0  
         self._selected_column = 0
+        self._gameUI.init_ui(self.get_current_player())
+        self._gameUI.init_ui(self.get_current_player())
 
     def get_board(self):
         return self._board
