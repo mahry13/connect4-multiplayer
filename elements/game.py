@@ -1,5 +1,4 @@
 import pygame
-import time
 from client import Network
 from elements.board import Board
 from elements.player import Player

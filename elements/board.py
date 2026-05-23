@@ -1,5 +1,4 @@
 from elements.player import Player
-import numpy as np
 
 class Board:
     
@@ -11,13 +10,6 @@ class Board:
 
     def clear(self):
         self._grid = [[None for i in range(self.COL_COUNT)] for j in range(self.ROW_COUNT)]
-
-
-    def get_next_open_row(self, player, col):
-        for i in range(self.ROW_COUNT):
-            if self._grid[i][col] is None:
-                return i
-        return -1
     
     def place_piece(self, player, row, col):
         self._grid[row][col] = player.get_id()
