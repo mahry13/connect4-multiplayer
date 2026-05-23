@@ -49,7 +49,7 @@ def reset_shared_game():
 
 def handle_client(conn, player_id):
     global current_turn, game_active
-    conn.sendall(json.dumps({"player_id": player_id}).encode('utf-8'))
+    conn.sendall((json.dumps({"player_id": player_id}) + '\n').encode('utf-8'))
 
     while True:
         try:
@@ -65,7 +65,7 @@ def handle_client(conn, player_id):
                     reset_shared_game()
                 with clients_lock:
                     for c in connections:
-                        c.sendall(json.dumps({"type": "restart_request"}).encode('utf-8'))
+                        c.sendall((json.dumps({"type": "restart_request"}) + '\n').encode('utf-8'))
                 continue
 
             if "column" in data:
@@ -73,11 +73,11 @@ def handle_client(conn, player_id):
 
                 with game_state_lock:
                     if not game_active:
-                        conn.sendall(json.dumps({"type": "error", "message": "Game over! Waiting for restart."}).encode('utf-8'))
+                        conn.sendall((json.dumps({"type": "error", "message": "Game over! Waiting for restart."}) + '\n').encode('utf-8'))
                         continue
                         
                     if current_turn != player_id:
-                        conn.sendall(json.dumps({"type": "error", "message": "Not your turn!"}).encode('utf-8'))
+                        conn.sendall((json.dumps({"type": "error", "message": "Not your turn!"}) + '\n').encode('utf-8'))
                         continue
 
                     # validate space on shared board
@@ -89,7 +89,7 @@ def handle_client(conn, player_id):
 
                     if row == -1:
                         # column was full
-                        conn.sendall(json.dumps({"type": "error", "message": "Column full!"}).encode('utf-8'))
+                        conn.sendall((json.dumps({"type": "error", "message": "Column full!"}) + '\n').encode('utf-8'))
                         continue
 
                     # make a move on shared board
@@ -97,13 +97,13 @@ def handle_client(conn, player_id):
                     has_won = winning_move(shared_board, player_id)
                     
                     # Package state payload
-                    broadcast_payload = json.dumps({
+                    broadcast_payload = (json.dumps({
                         "type": "move_success",
                         "player_id": player_id,
                         "column": col,
                         "row": row,
                         "won": has_won
-                    }).encode('utf-8')
+                    }) + '\n').encode('utf-8')
 
                     if has_won:
                         game_active = False
@@ -125,7 +125,7 @@ def handle_client(conn, player_id):
         # tell about the disconnect
         for c in connections:
             try:
-                c.sendall(json.dumps({"type": "disconnect"}).encode('utf-8'))
+                c.sendall((json.dumps({"type": "disconnect"}) + '\n').encode('utf-8'))
             except Exception:
                 pass
     conn.close()
@@ -152,11 +152,11 @@ def start_server():
                         reset_shared_game()
                     for c in connections:
                         try:
-                            c.sendall(json.dumps({"type": "ready"}).encode('utf-8'))
+                            c.sendall((json.dumps({"type": "ready"})+ '\n').encode('utf-8'))
                         except Exception:
                             pass
             else:
                 conn.close()
-
+# dodac thread do przechwytywania inputu zeby wylaczyc serwer
 if __name__ == "__main__":
     start_server()

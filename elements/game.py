@@ -217,7 +217,7 @@ class Game:
                         has_won = incoming_data.get("won")
 
                         # update local board
-                        self._board.place_piece(self.get_player(p_id), column, row)
+                        self._board.place_piece(self.get_player(p_id), row, column)
                         
                         # draw piece
                         self._gameUI.draw_board(self.get_player(p_id), row, column, self._selected_column)
