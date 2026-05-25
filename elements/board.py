@@ -1,5 +1,3 @@
-from connect4_console_ver import COL_COUNT
-from elements.player import Player
 
 class Board:
     
@@ -11,7 +9,6 @@ class Board:
 
     def clear(self):
         self._grid = [[None for i in range(self.COL_COUNT)] for j in range(self.ROW_COUNT)]
-
 
     def get_next_open_row(self, player, col):
         for i in range(self.ROW_COUNT):
