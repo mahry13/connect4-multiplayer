@@ -1,65 +1,46 @@
 import socket
 import threading
 import json
-
-COL_COUNT = 7
-ROW_COUNT = 6
-WINNING_COUNT = 4
+# Import your Board class directly
+from elements.board import Board 
 
 clients_lock = threading.Lock()
 connections = []
 
+# Lightweight Mock Player class so Board can extract IDs seamlessly on the server side
+class ServerPlayerMock:
+    def __init__(self, player_id):
+        self.id = player_id
+    def get_id(self):
+        return self.id
+
 # shared resources protected by game_state_lock
 game_state_lock = threading.Lock()
-shared_board = [[-1 for _ in range(7)] for _ in range(6)]  # 6 rows, 7 columns (-1 = empty)
-current_turn = 0  # Player 0 goes first
+shared_board = Board()  
+current_turn = 0  
 game_active = True
 
-def winning_move(board, player_id):
-    # horizontal
-    for col in range(COL_COUNT - WINNING_COUNT + 1):
-        for row in range(ROW_COUNT):
-            if board[row][col] == player_id and board[row][col + 1] == player_id and board[row][col + 2] == player_id and board[row][col + 3] == player_id:
-                return True
-
-    # vertical
-    for col in range(COL_COUNT):
-        for row in range(ROW_COUNT - WINNING_COUNT + 1):
-            if board[row][col] == player_id and board[row + 1][col] == player_id and board[row + 2][col] == player_id and board[row + 3][col] == player_id:
-                return True
-
-    # positive diagonal
-    for col in range(COL_COUNT - WINNING_COUNT + 1):
-        for row in range(WINNING_COUNT - 1, ROW_COUNT):
-            if board[row][col] == player_id and board[row - 1][col + 1] == player_id and board[row - 2][col + 2] == player_id and board[row - 3][col + 3] == player_id:
-                return True
-
-    # negative diagonal
-    for col in range(COL_COUNT - WINNING_COUNT + 1):
-        for row in range(ROW_COUNT - WINNING_COUNT + 1):
-            if board[row][col] == player_id and board[row + 1][col + 1] == player_id and board[row + 2][col + 2] == player_id and board[row + 3][col + 3] == player_id:
-                return True
-    return False
-
 def reset_shared_game():
-    global shared_board, current_turn, game_active
-    shared_board = [[-1 for _ in range(7)] for _ in range(6)]
+    global current_turn, game_active
+    shared_board.clear()
     current_turn = 0
     game_active = True
 
 def send_json(conn, data):
-    """Guarantees every outgoing data packet ends with a uniform newline character."""
+    """Helper wrapper to guarantee every packet string ends with a safe delimiter."""
     try:
-        msg = (json.dumps(data) + '\n').encode('utf-8')
+        msg = (json.dumps(data) + "\n").encode('utf-8')
         conn.sendall(msg)
     except Exception as e:
-        print(f"Error broadcasting message: {e}")
+        print(f"Error sending message: {e}")
 
 def handle_client(conn, player_id):
     global current_turn, game_active
-    
-    # Register connection
     send_json(conn, {"player_id": player_id})
+    client_buffer = ""
+
+    # Generate our mock player context object matching the client's current loop ID
+    current_player_mock = ServerPlayerMock(player_id)
 
     while True:
         try:
@@ -67,73 +48,76 @@ def handle_client(conn, player_id):
             if not raw_data:
                 break
 
-            # Note: For simplicity on standard turns, assuming clean single-packet requests.
-            # If clients spam inputs, apply the newline split technique used in client.py here too!
-            data = json.loads(raw_data.decode('utf-8').strip())
-            msg_type = data.get("type")
-
-            if msg_type == "restart_request":
-                with game_state_lock:
-                    reset_shared_game()
-                with clients_lock:
-                    for c in connections:
-                        send_json(c, {"type": "restart_request"})
-                continue
-
-            if "column" in data:
-                col = data["column"]
-                broadcast_payload = None
-                error_message = None
-
-                # Keep the lock execution path fast and drop-safe!
-                with game_state_lock:
-                    if not game_active:
-                        error_message = "Game over! Waiting for restart."
-                    elif current_turn != player_id:
-                        error_message = "Not your turn!"
-                    else:
-                        # validate space on shared board
-                        row = -1
-                        for r in range(ROW_COUNT):
-                            if shared_board[r][col] == -1:
-                                row = r
-                                break
-
-                        if row == -1:
-                            error_message = "Column full!"
-                        else:
-                            # Commit move securely
-                            shared_board[row][col] = player_id
-                            has_won = winning_move(shared_board, player_id)
-                            
-                            broadcast_payload = {
-                                "type": "move_success",
-                                "player_id": player_id,
-                                "column": col,
-                                "row": row,
-                                "won": has_won
-                            }
-
-                            if has_won:
-                                game_active = False
-                            else:
-                                current_turn = (current_turn + 1) % 2
-
-                # Send error responses safely outside of the state lock loop
-                if error_message:
-                    print(f"[SERVER LOG] Rejected move from Player {player_id} in Col {col}: {error_message}")
-                    send_json(conn, {"type": "error", "message": error_message})
+            client_buffer += raw_data.decode('utf-8')
+            
+            while "\n" in client_buffer:
+                packet_str, client_buffer = client_buffer.split("\n", 1)
+                packet_str = packet_str.strip()
+                if not packet_str:
                     continue
 
-                # Broadcast authorized change to all active clients
-                if broadcast_payload:
-                    print(f"[SERVER LOG] Authorized Player {player_id} move in Col {col}, Row {row}.")
+                try:
+                    data = json.loads(packet_str)
+                except json.JSONDecodeError:
+                    continue
+
+                msg_type = data.get("type")
+
+                if msg_type == "restart_request":
+                    with game_state_lock:
+                        reset_shared_game()
                     with clients_lock:
                         for c in connections:
-                            send_json(c, broadcast_payload)
+                            send_json(c, {"type": "restart_request"})
+                    continue
+
+                if "column" in data:
+                    col = data["column"]
+                    broadcast_payload = None
+                    error_message = None
+
+                    with game_state_lock:
+                        if not game_active:
+                            error_message = "Game over! Waiting for restart."
+                        elif current_turn != player_id:
+                            error_message = "Not your turn!"
+                        else:
+                            # FIX: Use your Board's native validation utility method!
+                            row = shared_board.get_next_open_row(current_player_mock, col)
+
+                            if row == -1:
+                                error_message = "Column full!"
+                            else:
+                                # FIX: Use your formal board methods to drop pieces and evaluate wins!
+                                shared_board.place_piece(current_player_mock, col, row)
+                                has_won = shared_board.winning_move(current_player_mock)
+                                
+                                broadcast_payload = {
+                                    "type": "move_success",
+                                    "player_id": player_id,
+                                    "column": col,
+                                    "row": row,
+                                    "won": has_won
+                                }
+
+                                if has_won:
+                                    game_active = False
+                                else:
+                                    current_turn = (current_turn + 1) % 2
+
+                    if error_message:
+                        print(f"[SERVER LOG] Rejected move from Player {player_id}: {error_message}")
+                        send_json(conn, {"type": "error", "message": error_message})
+                        continue
+
+                    if broadcast_payload:
+                        print(f"[SERVER LOG] Player {player_id} placed piece in Col {col}, Row {row}. Won: {broadcast_payload['won']}")
+                        with clients_lock:
+                            for c in connections:
+                                send_json(c, broadcast_payload)
 
         except Exception as e:
-            print(f"Server tracking log error for Player {player_id}: {e}")
+            print(f"Exception handling network transmission: {e}")
             break
 
     print(f"Player {player_id} disconnected.")
@@ -146,15 +130,13 @@ def handle_client(conn, player_id):
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('0.0.0.0', 5555)) # listening on all interfaces
+    server.bind(('0.0.0.0', 5555)) 
     server.listen(2)
-    print("Server running...")
+    print("Server running safely on network interfaces using the Board architecture class module...")
 
     player_id = 0
     while True:
         conn, addr = server.accept()
-        print(f"Connection registered from IP: {addr[0]}")
-
         with clients_lock:
             if len(connections) < 2:
                 connections.append(conn)
@@ -165,12 +147,9 @@ def start_server():
                     with game_state_lock:
                         reset_shared_game()
                     for c in connections:
-                        try:
-                            c.sendall((json.dumps({"type": "ready"})+ '\n').encode('utf-8'))
-                        except Exception:
-                            pass
+                        send_json(c, {"type": "ready"})
             else:
                 conn.close()
-# dodac thread do przechwytywania inputu zeby wylaczyc serwer
+
 if __name__ == "__main__":
     start_server()
