@@ -16,6 +16,6 @@ class Player:
 
     def get_name(self):
         if (self.id==PLAYER_ONE):
-            return f"Dr House "
+            return f"Dr House"
         else:
-            return f"Dr Wilson "
+            return f"Dr Wilson"

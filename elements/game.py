@@ -42,37 +42,40 @@ class GameUI:
         self.draw_board()
         self.draw_player_info(player)
     
-    def draw_player_info(self, player):
+    def draw_player_info(self, current_player, local_player_id=None):
         pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
-        text = "Current Player: " + player.get_name()
+        
+        if local_player_id is not None and current_player.get_id() == local_player_id:
+            text = "Your Turn!"
+        else:
+            text = "Current Player: " + current_player.get_name()
         text = self.font.render(text, True, (0,0,0))
         self.screen.blit(text, (50, 10))
         pygame.display.flip()
     
-    def draw_player_won(self, player):
+    def draw_player_won(self, winner, local_player_id):
         pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
-        text = player.get_name() + " won! Restart (y | n)?"
-        text = self.font.render(text, True, (0,0,0))
-        self.screen.blit(text, (50, 10))
-        pygame.display.flip()
+        
+        
 
-    def draw_win_screen(self, winner_player):
+    def draw_win_screen(self, winner, local_player_id):
         # 1. Clean the upper row spacing area
         pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
 
-        # 2. Render only the specific image for the winning player (No regular board drawn here)
-        if winner_player.get_id() == 0:
+        if winner.get_id() == 0:
             self.screen.blit(self.win_house, (0, 0))
         else:
             self.screen.blit(self.win_wilson, (0, 0))
         
-        # 3. Draw the user prompt text overlay clear zone at the top
         pygame.draw.rect(self.screen, (255, 255, 255), [0, 0, 800, 100], 0)
         
-        text = f"{winner_player.get_name()} wins! Play again? (Y / N)"
-        rendered_text = self.font.render(text, True, (0, 0, 0))
-        self.screen.blit(rendered_text, (50, 10))
-        
+        if winner.get_id() == local_player_id:
+            text = "You won!!! Play again? (y | n)?"
+        else:
+            text = winner.get_name() + " won!!! Play again? (y | n)?"
+
+        text = self.font.render(text, True, (0,0,0))
+        self.screen.blit(text, (50, 10))
         pygame.display.flip()
         
     def get_piece_image(self, player):
@@ -167,106 +170,105 @@ class Game:
         self._gameUI.init_ui(self.get_current_player())         
 
     def game_loop(self):
-        update_ui = True
-        done = False
-        player_won = False
-        opponent_disconnected = False
+            update_ui = True
+            done = False
+            player_won = False
+            opponent_disconnected = False
 
-        self.start_game_music()
+            self.start_game_music()
 
-        while not done:
-            # --- 1. LISTEN FOR OPPONENT'S DATA ---
-            if not opponent_disconnected:
-                incoming_data = self.network.receive()
-                if incoming_data:
-                    msg_type=incoming_data.get("type") 
-
-                    #handle disconnections
-                    if msg_type == "disconnect":
-                        opponent_disconnected = True
-                        update_ui = True
+            while not done:
+                # --- 1. LISTEN FOR OPPONENT'S DATA ---
+                if not opponent_disconnected:
+                    # FIX 1: Grab the parsed list of packets from our buffer
+                    incoming_packets = self.network.receive_all_packets()
                     
-                    #handle ready status
-                    elif msg_type == "ready":
-                        self.game_ready = True
-                        opponent_disconnected = False
-                        update_ui = True
-                    
-                    # handle a restart request
-                    elif incoming_data.get("type") == "restart_request":
-                        player_won = False
-                        done = False
-                        self._current_player = 0  # reset turn to player 0
-                        self.restart()
-                        update_ui = True
-                        
-                    elif msg_type == "error":
-                        error_msg = incoming_data.get("message")
-                        print(f"Error from server: {error_msg}")
+                    # FIX 2: Iterate through every received message in sequence
+                    for incoming_data in incoming_packets:
+                        msg_type = incoming_data.get("type") 
 
-                        update_ui = True
-
-                    elif msg_type == "move_success":
-                        p_id = incoming_data.get("player_id")
-                        column = incoming_data.get("column")
-                        row = incoming_data.get("row")
-                        has_won = incoming_data.get("won")
-
-                        # update local board
-                        self._board.place_piece(self.get_player(p_id), row, column)
-                        
-                        # draw piece
-                        self._gameUI.draw_board(self.get_player(p_id), row, column, self._selected_column)
-
-                        if has_won:
-                            player_won=True
+                        # Handle disconnections
+                        if msg_type == "disconnect":
+                            opponent_disconnected = True
                             update_ui = True
+                        
+                        # Handle ready status
+                        elif msg_type == "ready":
+                            self.game_ready = True
+                            opponent_disconnected = False
+                            update_ui = True
+                        
+                        # Handle a restart request
+                        elif msg_type == "restart_request":
+                            player_won = False
+                            self._current_player = 0  # reset turn to player 0
+                            self.restart()
+                            update_ui = True
+                            
+                        elif msg_type == "error":
+                            error_msg = incoming_data.get("message")
+                            print(f"[CLIENT LOG] Error from server: {error_msg}")
+                            update_ui = True
+
+                        elif msg_type == "move_success":
+                            p_id = incoming_data.get("player_id")
+                            column = incoming_data.get("column")
+                            row = incoming_data.get("row")
+                            has_won = incoming_data.get("won")
+
+                            print(f"Player {p_id} placed a piece in Col {column}, Row {row}.")
+
+                            self._board.place_piece(self.get_player(p_id), column, row)
+                            self._gameUI.draw_board(self.get_player(p_id), row, column, self._selected_column)
+
+                            if has_won:
+                                player_won = True
+                                update_ui = True
+                            else:
+                                self.switch_player()
+                                update_ui = True
+
+                # --- 2. HANDLE PLAYER INPUTS ---
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        done = True
+
+                    elif event.type == pygame.KEYUP:
+                        # Play again options
+                        if player_won or opponent_disconnected:
+                            if event.key == 110: # 'N' Key
+                                done = True
+                            elif event.key in [121, 122] and not opponent_disconnected: # 'Y' Key
+                                self.network.send({"type": "restart_request"})
                         else:
-                            self.switch_player()
-                            update_ui = True
+                            # Only allow keyboard input if the game is completely unblocked and it is OUR turn
+                            if self.game_ready and self._current_player == self.local_player_id:
+                                # LEFT arrow
+                                if event.key == pygame.K_LEFT:
+                                    self._selected_column = max(0, self._selected_column - 1)
+                                # RIGHT arrow
+                                elif event.key == pygame.K_RIGHT:
+                                    self._selected_column = min(6, self._selected_column + 1)
+                                # DROP (DOWN arrow or ENTER)
+                                elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
+                                    print(f"[CLIENT INPUT] Request to drop piece in Column {self._selected_column}")
+                                    self.network.send({"column": self._selected_column})
 
-            # handle player inputs
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    done = True
+                # Only track active hover/preview indicators when a player hasn't already won!
+                if not player_won and not opponent_disconnected and self.game_ready:
+                    self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
 
-                #play again: NO
-                elif event.type == pygame.KEYUP:
-                    if player_won or opponent_disconnected:
-                        if event.key == 110:
-                            done = True
-
-                        elif event.key in [121, 122] and not opponent_disconnected:
-                            self.network.send({"type": "restart_request"})
-
+                # --- 3. REFRESH GENERAL GAME STATE UI OVERLAYS ---
+                if update_ui:
+                    if opponent_disconnected:
+                        self._gameUI.draw_disconnect()
+                    elif not self.game_ready:
+                        self._gameUI.draw_waiting()
+                    elif player_won:
+                        self._gameUI.draw_win_screen(self.get_current_player(), self.network.player_id)
                     else:
-                        # Only allow keyboard input if the game is completely unblocked and it is OUR turn
-                        if self.game_ready and self._current_player == self.local_player_id:
-                            # LEFT arrow
-                            if event.key == pygame.K_LEFT:
-                                self._selected_column = max(0, self._selected_column - 1)
-                            # RIGHT arrow
-                            elif event.key == pygame.K_RIGHT:
-                                self._selected_column = min(6, self._selected_column + 1)
-                            # DROP (DOWN arrow or ENTER)
-                            elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
-                                self.network.send({"column": self._selected_column})
-
-            # Only track active hover/preview indicators when a player hasn't already won!
-            if not player_won and not opponent_disconnected and self.game_ready:
-                self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
-
-            # updating the board
-            if update_ui:
-                if opponent_disconnected:
-                    self._gameUI.draw_disconnect()
-                elif not self.game_ready:
-                    self._gameUI.draw_waiting()
-                elif player_won:
-                    self._gameUI.draw_win_screen(self.get_current_player())
-                else:
-                    self._gameUI.draw_player_info(self.get_current_player())
-                update_ui = False
+                        self._gameUI.draw_player_info(self.get_current_player(), self.network.player_id)
+                    update_ui = False
 
     def switch_player(self):
         self._current_player += 1
