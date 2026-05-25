@@ -11,6 +11,7 @@ class Network:
 
     def connect(self):
         self.client.connect(self.addr)
+        # block until we get the first full message containing player_id
         while '\n' not in self.buffer:
             self.buffer += self.client.recv(1024).decode('utf-8')
 
@@ -24,26 +25,23 @@ class Network:
             print(f"[CLIENT LOG] Lost connection to server while sending: {e}")
 
     def receive_all_packets(self):
-        """
-        Reads non-blocking network stream chunks and parses out a list 
-        of complete JSON messages separated by newlines.
-        """
+
         packets = []
         try:
             self.client.setblocking(False)
             data = self.client.recv(1024)
             if not data:
-                # If recv() returns an empty byte string, the server closed gracefully
+                # empty data means the server closed the connection properly
                 return [{"type": "server_disconnect"}]
             self.buffer += data.decode('utf-8')
 
         except BlockingIOError:
-            pass  # No data available right now
+            pass  # no data available right now, move on
         except (ConnectionResetError, ConnectionAbortedError, OSError):
-            # The server crashed or was shut down abruptly
+            # the server crashed or was shut down abruptly
             return [{"type": "server_disconnect"}]
 
-        # Process all full lines currently held inside our stream buffer
+        # extract all complete messages held inside the stream buffer
         while '\n' in self.buffer:
             msg_str, self.buffer = self.buffer.split('\n', 1)
             msg_str = msg_str.strip()
