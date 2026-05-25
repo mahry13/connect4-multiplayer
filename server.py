@@ -57,12 +57,7 @@ def send_json(conn, data):
 
 def handle_client(conn, player_id):
     global current_turn, game_active
-    
-    # FIX 1: Send initial connection packet WITH a trailing newline character
-    send_json(conn, {"player_id": player_id})
-    
-    # We create a local buffer to track incoming chunk segments safely
-    client_buffer = ""
+    conn.sendall((json.dumps({"player_id": player_id}) + '\n').encode('utf-8'))
 
     while True:
         try:
@@ -79,8 +74,13 @@ def handle_client(conn, player_id):
                 if not packet_str:
                     continue
 
-                data = json.loads(packet_str)
-                msg_type = data.get("type")
+            if msg_type == "restart_request":
+                with game_state_lock:
+                    reset_shared_game()
+                with clients_lock:
+                    for c in connections:
+                        c.sendall((json.dumps({"type": "restart_request"}) + '\n').encode('utf-8'))
+                continue
 
                 # Handle Rematch requests
                 if msg_type == "restart_request":
@@ -91,57 +91,48 @@ def handle_client(conn, player_id):
                             send_json(c, {"type": "restart_request"})
                     continue
 
-                # Handle Game Movement requests
-                if "column" in data:
-                    col = data["column"]
-                    broadcast_payload = None
-
-                    with game_state_lock:
-                        if not game_active:
-                            send_json(conn, {"type": "error", "message": "Game over! Waiting for restart."})
-                            continue
-                            
-                        if current_turn != player_id:
-                            send_json(conn, {"type": "error", "message": "Not your turn!"})
-                            continue
-
-                        # Validate space on shared board
-                        row = -1
-                        for r in range(6):
-                            if shared_board[r][col] == -1:
-                                row = r
-                                break
-
-                        if row == -1:
-                            send_json(conn, {"type": "error", "message": "Column full!"})
-                            continue
-
-                        # Make move on shared board
-                        shared_board[row][col] = player_id
-                        has_won = winning_move(shared_board, player_id)
+                with game_state_lock:
+                    if not game_active:
+                        conn.sendall((json.dumps({"type": "error", "message": "Game over! Waiting for restart."}) + '\n').encode('utf-8'))
+                        continue
                         
-                        # Package state payload dictionary object
-                        broadcast_payload = {
-                            "type": "move_success",
-                            "player_id": player_id,
-                            "column": col,
-                            "row": row,
-                            "won": has_won
-                        }
+                    if current_turn != player_id:
+                        conn.sendall((json.dumps({"type": "error", "message": "Not your turn!"}) + '\n').encode('utf-8'))
+                        continue
 
                         if has_won:
                             game_active = False
                         else:
                             current_turn = (current_turn + 1) % 2
 
-                    # FIX 3: Broadcast valid movement changes safely to both clients
-                    if broadcast_payload is not None:
-                        with clients_lock:
-                            for c in connections:
-                                send_json(c, broadcast_payload)
-                                
-        except Exception as e:
-            print(f"Error handling network transmission from Player {player_id}: {e}")
+                    if row == -1:
+                        # column was full
+                        conn.sendall((json.dumps({"type": "error", "message": "Column full!"}) + '\n').encode('utf-8'))
+                        continue
+
+                    # make a move on shared board
+                    shared_board[row][col] = player_id
+                    has_won = winning_move(shared_board, player_id)
+                    
+                    # Package state payload
+                    broadcast_payload = (json.dumps({
+                        "type": "move_success",
+                        "player_id": player_id,
+                        "column": col,
+                        "row": row,
+                        "won": has_won
+                    }) + '\n').encode('utf-8')
+
+                    if has_won:
+                        game_active = False
+                    else:
+                        current_turn = (current_turn + 1) % 2
+            #  broadcast change to all clients
+            with clients_lock:
+                for c in connections:
+                        c.sendall(broadcast_payload)
+        except Exception:
+            # client abruptly closed the connection
             break
 
     print(f"Player {player_id} disconnected.")
@@ -151,8 +142,10 @@ def handle_client(conn, player_id):
             connections.remove(conn)
         # Inform remaining active clients about the drop
         for c in connections:
-            send_json(c, {"type": "disconnect"})
-            
+            try:
+                c.sendall((json.dumps({"type": "disconnect"}) + '\n').encode('utf-8'))
+            except Exception:
+                pass
     conn.close()
 
 def start_server():
@@ -177,11 +170,11 @@ def start_server():
                         reset_shared_game()
                     for c in connections:
                         try:
-                            c.sendall(json.dumps({"type": "ready"}).encode('utf-8'))
+                            c.sendall((json.dumps({"type": "ready"})+ '\n').encode('utf-8'))
                         except Exception:
                             pass
             else:
                 conn.close()
-
+# dodac thread do przechwytywania inputu zeby wylaczyc serwer
 if __name__ == "__main__":
     start_server()
