@@ -134,6 +134,15 @@ class GameUI:
         self.screen.blit(text, (50, 10))
         pygame.display.flip()
 
+    def draw_error_message(self, message):
+        # draw a red banner across the screen
+        pygame.draw.rect(self.screen, (255, 0, 0), [0, 0, 800, 60], 0)
+
+        # render the text in white
+        text = self.font.render(message, True, (255, 255, 255))
+        self.screen.blit(text, (50, 10))
+        pygame.display.flip()
+
 
 class Game:
     def __init__(self):
@@ -145,6 +154,8 @@ class Game:
         self._players = [Player(0), Player(1)]
         self._board = Board()
         self.game_ready = False
+        self.error_msg = ""
+        self.error_time = 0
         self._gameUI = GameUI(self._players[self.local_player_id])
 
     def welcome_loop(self):
@@ -158,7 +169,7 @@ class Game:
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     exit()
-                elif event.type == pygame.KEYDOWN:
+                elif event.type == pygame.KEYUP:
                     pygame.mixer.music.fadeout(1000)
                     waiting = False
                     
@@ -173,6 +184,9 @@ class Game:
             self.start_game_music()
 
             while not done:
+                if self.error_msg and (pygame.time.get_ticks() - self.error_time > 2000):
+                    self.error_msg = ""
+                    update_ui = True
                 # --- 1. LISTEN FOR OPPONENT'S DATA ---
                 if not opponent_disconnected:
                     # FIX 1: Grab the parsed list of packets from our buffer
@@ -183,8 +197,11 @@ class Game:
                         msg_type = incoming_data.get("type") 
 
                         # Handle disconnections
-                        if msg_type == "disconnect":
+                        if msg_type == "disconnect" or msg_type == "server_disconnect":
+                            if msg_type == "server_disconnect":
+                                print("[CLIENT LOG] The server has shut down.")
                             opponent_disconnected = True
+                            self.game_ready = False
                             update_ui = True
                         
                         # Handle ready status
@@ -214,7 +231,7 @@ class Game:
                             print(f"Player {p_id} placed a piece in Col {column}, Row {row}.")
 
                             self._board.place_piece(self.get_player(p_id), column, row)
-                            self._gameUI.draw_board(self.get_player(p_id), row, column, self._selected_column)
+                            self._gameUI.draw_board(self.get_player(p_id), row, column, None)
 
                             if has_won:
                                 player_won = True
@@ -248,10 +265,22 @@ class Game:
                                 elif event.key in [pygame.K_DOWN, pygame.K_RETURN]:
                                     print(f"[CLIENT INPUT] Request to drop piece in Column {self._selected_column}")
                                     self.network.send({"column": self._selected_column})
+                                # INVALID KEY (e.g., UP arrow)
+                                else:
+                                    self.error_msg = "Invalid key! Use Left, Right, or Down."
+                                    self.error_time = pygame.time.get_ticks()
+                                    update_ui = True
+                            else:
+                                # Opponent's turn but player pressed a movement key
+                                if event.key in [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_DOWN, pygame.K_RETURN,
+                                                 pygame.K_UP]:
+                                    self.error_msg = "Wait for your turn!"
+                                    self.error_time = pygame.time.get_ticks()
+                                    update_ui = True
 
                 # Only track active hover/preview indicators when a player hasn't already won!
                 if not player_won and not opponent_disconnected and self.game_ready:
-                    self._gameUI.draw_board(self.get_current_player(), -1, -1, self._selected_column)
+                    self._gameUI.draw_board(self.get_player(self.local_player_id), -1, -1, self._selected_column)
 
                 # --- 3. REFRESH GENERAL GAME STATE UI OVERLAYS ---
                 if update_ui:
@@ -264,6 +293,8 @@ class Game:
                     else:
                         self._gameUI.draw_player_info(self.get_current_player(), self.network.player_id)
                     update_ui = False
+                if self.error_msg:
+                    self._gameUI.draw_error_message(self.error_msg)
 
     def switch_player(self):
         self._current_player += 1

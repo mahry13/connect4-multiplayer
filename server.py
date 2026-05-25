@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+import os
 # Import your Board class directly
 from elements.board import Board 
 
@@ -131,19 +132,20 @@ def handle_client(conn, player_id):
             send_json(c, {"type": "disconnect"})
     conn.close()
 
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('0.0.0.0', 5555)) 
-    server.listen(2)
-    print("Server running safely on network interfaces using the Board architecture class module...")
 
+def accept_connections(server):
     player_id = 0
     while True:
-        conn, addr = server.accept()
+        try:
+            conn, addr = server.accept()
+        except Exception:
+            break  # triggers when the server socket is manually closed
+
         with clients_lock:
             if len(connections) < 2:
                 connections.append(conn)
-                threading.Thread(target=handle_client, args=(conn, player_id)).start()
+                # run client handler in background
+                threading.Thread(target=handle_client, args=(conn, player_id), daemon=True).start()
                 player_id = (player_id + 1) % 2
 
                 if len(connections) == 2:
@@ -153,6 +155,24 @@ def start_server():
                         send_json(c, {"type": "ready"})
             else:
                 conn.close()
+
+def start_server():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('0.0.0.0', 5555)) 
+    server.listen(2)
+    print("Server running... Type 'q' and press Enter to shut down.")
+
+    accept_thread = threading.Thread(target=accept_connections, args=(server,), daemon=True)
+    accept_thread.start()
+    while True:
+        cmd = input()
+        if cmd.lower() == 'q':
+            print("Shutting down server...")
+            server.close()
+            with clients_lock:
+                for c in connections:
+                    c.close()
+            os._exit(0)  # force quit all threads immediately
 
 if __name__ == "__main__":
     start_server()

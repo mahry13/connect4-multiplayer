@@ -18,7 +18,10 @@ class Network:
         return json.loads(msg)['player_id']
 
     def send(self, data):
-        self.client.sendall((json.dumps(data) + '\n').encode('utf-8'))
+        try:
+            self.client.sendall((json.dumps(data) + '\n').encode('utf-8'))
+        except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
+            print(f"[CLIENT LOG] Lost connection to server while sending: {e}")
 
     def receive_all_packets(self):
         """
@@ -29,13 +32,16 @@ class Network:
         try:
             self.client.setblocking(False)
             data = self.client.recv(1024)
-            if data:
-                self.buffer += data.decode('utf-8')
+            if not data:
+                # If recv() returns an empty byte string, the server closed gracefully
+                return [{"type": "server_disconnect"}]
+            self.buffer += data.decode('utf-8')
+
         except BlockingIOError:
             pass  # No data available right now
-        except Exception as e:
-            print(f"Network error: {e}")
-            return packets
+        except (ConnectionResetError, ConnectionAbortedError, OSError):
+            # The server crashed or was shut down abruptly
+            return [{"type": "server_disconnect"}]
 
         # Process all full lines currently held inside our stream buffer
         while '\n' in self.buffer:
