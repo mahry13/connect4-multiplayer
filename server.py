@@ -19,12 +19,13 @@ game_state_lock = threading.Lock()
 shared_board = Board()  
 current_turn = 0  
 game_active = True
-
+restart_votes = set() # using a set so even if one player spams yes it will count as one vote
 def reset_shared_game():
-    global current_turn, game_active
+    global current_turn, game_active, restart_votes
     shared_board.clear()
     current_turn = 0
     game_active = True
+    restart_votes.clear()
 
 def send_json(conn, data):
     """Helper wrapper to guarantee every packet string ends with a safe delimiter."""
@@ -65,10 +66,12 @@ def handle_client(conn, player_id):
 
                 if msg_type == "restart_request":
                     with game_state_lock:
-                        reset_shared_game()
-                    with clients_lock:
-                        for c in connections:
-                            send_json(c, {"type": "restart_request"})
+                        restart_votes.add(player_id)
+                        if len(restart_votes) == 2:
+                            reset_shared_game()
+                            with clients_lock:
+                                for c in connections:
+                                    send_json(c, {"type": "restart_request"})
                     continue
 
                 if "column" in data:
