@@ -2,7 +2,6 @@ import socket
 import threading
 import json
 import os
-# Import your Board class directly
 from elements.board import Board 
 
 clients_lock = threading.Lock()

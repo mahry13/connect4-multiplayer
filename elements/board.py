@@ -1,6 +1,5 @@
 from connect4_console_ver import COL_COUNT
 from elements.player import Player
-import numpy as np
 
 class Board:
     

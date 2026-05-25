@@ -4,7 +4,7 @@ import json
 class Network:
     def __init__(self):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_ip = '192.168.1.22'
+        self.server_ip = '192.168.1.205'
         self.addr = (self.server_ip, 5555)
         self.buffer = ""
         self.player_id = self.connect()
