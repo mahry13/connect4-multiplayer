@@ -47,9 +47,22 @@ def reset_shared_game():
     current_turn = 0
     game_active = True
 
+def send_json(conn, data):
+    """Helper wrapper to guarantee every packet string ends with a safe delimiter."""
+    try:
+        msg = (json.dumps(data) + "\n").encode('utf-8')
+        conn.sendall(msg)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+
 def handle_client(conn, player_id):
     global current_turn, game_active
-    conn.sendall(json.dumps({"player_id": player_id}).encode('utf-8'))
+    
+    # FIX 1: Send initial connection packet WITH a trailing newline character
+    send_json(conn, {"player_id": player_id})
+    
+    # We create a local buffer to track incoming chunk segments safely
+    client_buffer = ""
 
     while True:
         try:
@@ -57,64 +70,78 @@ def handle_client(conn, player_id):
             if not raw_data:
                 break
 
-            data = json.loads(raw_data.decode('utf-8'))
-            msg_type = data.get("type")
+            client_buffer += raw_data.decode('utf-8')
+            
+            # FIX 2: Process incoming stream chunks divided by newlines
+            while "\n" in client_buffer:
+                packet_str, client_buffer = client_buffer.split("\n", 1)
+                packet_str = packet_str.strip()
+                if not packet_str:
+                    continue
 
-            if msg_type == "restart_request":
-                with game_state_lock:
-                    reset_shared_game()
-                with clients_lock:
-                    for c in connections:
-                        c.sendall(json.dumps({"type": "restart_request"}).encode('utf-8'))
-                continue
+                data = json.loads(packet_str)
+                msg_type = data.get("type")
 
-            if "column" in data:
-                col = data["column"]
+                # Handle Rematch requests
+                if msg_type == "restart_request":
+                    with game_state_lock:
+                        reset_shared_game()
+                    with clients_lock:
+                        for c in connections:
+                            send_json(c, {"type": "restart_request"})
+                    continue
 
-                with game_state_lock:
-                    if not game_active:
-                        conn.sendall(json.dumps({"type": "error", "message": "Game over! Waiting for restart."}).encode('utf-8'))
-                        continue
+                # Handle Game Movement requests
+                if "column" in data:
+                    col = data["column"]
+                    broadcast_payload = None
+
+                    with game_state_lock:
+                        if not game_active:
+                            send_json(conn, {"type": "error", "message": "Game over! Waiting for restart."})
+                            continue
+                            
+                        if current_turn != player_id:
+                            send_json(conn, {"type": "error", "message": "Not your turn!"})
+                            continue
+
+                        # Validate space on shared board
+                        row = -1
+                        for r in range(6):
+                            if shared_board[r][col] == -1:
+                                row = r
+                                break
+
+                        if row == -1:
+                            send_json(conn, {"type": "error", "message": "Column full!"})
+                            continue
+
+                        # Make move on shared board
+                        shared_board[row][col] = player_id
+                        has_won = winning_move(shared_board, player_id)
                         
-                    if current_turn != player_id:
-                        conn.sendall(json.dumps({"type": "error", "message": "Not your turn!"}).encode('utf-8'))
-                        continue
+                        # Package state payload dictionary object
+                        broadcast_payload = {
+                            "type": "move_success",
+                            "player_id": player_id,
+                            "column": col,
+                            "row": row,
+                            "won": has_won
+                        }
 
-                    # validate space on shared board
-                    row = -1
-                    for r in range(6):
-                        if shared_board[r][col] == -1:
-                            row = r
-                            break
+                        if has_won:
+                            game_active = False
+                        else:
+                            current_turn = (current_turn + 1) % 2
 
-                    if row == -1:
-                        # column was full
-                        conn.sendall(json.dumps({"type": "error", "message": "Column full!"}).encode('utf-8'))
-                        continue
-
-                    # make a move on shared board
-                    shared_board[row][col] = player_id
-                    has_won = winning_move(shared_board, player_id)
-                    
-                    # Package state payload
-                    broadcast_payload = json.dumps({
-                        "type": "move_success",
-                        "player_id": player_id,
-                        "column": col,
-                        "row": row,
-                        "won": has_won
-                    }).encode('utf-8')
-
-                    if has_won:
-                        game_active = False
-                    else:
-                        current_turn = (current_turn + 1) % 2
-            #  broadcast change to all clients
-            with clients_lock:
-                for c in connections:
-                        c.sendall(broadcast_payload)
-        except Exception:
-            # client abruptly closed the connection
+                    # FIX 3: Broadcast valid movement changes safely to both clients
+                    if broadcast_payload is not None:
+                        with clients_lock:
+                            for c in connections:
+                                send_json(c, broadcast_payload)
+                                
+        except Exception as e:
+            print(f"Error handling network transmission from Player {player_id}: {e}")
             break
 
     print(f"Player {player_id} disconnected.")
@@ -122,12 +149,10 @@ def handle_client(conn, player_id):
     with clients_lock:
         if conn in connections:
             connections.remove(conn)
-        # tell about the disconnect
+        # Inform remaining active clients about the drop
         for c in connections:
-            try:
-                c.sendall(json.dumps({"type": "disconnect"}).encode('utf-8'))
-            except Exception:
-                pass
+            send_json(c, {"type": "disconnect"})
+            
     conn.close()
 
 def start_server():
