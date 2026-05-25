@@ -47,14 +47,6 @@ def reset_shared_game():
     current_turn = 0
     game_active = True
 
-def send_json(conn, data):
-    """Helper wrapper to guarantee every packet string ends with a safe delimiter."""
-    try:
-        msg = (json.dumps(data) + "\n").encode('utf-8')
-        conn.sendall(msg)
-    except Exception as e:
-        print(f"Error sending message: {e}")
-
 def handle_client(conn, player_id):
     global current_turn, game_active
     conn.sendall((json.dumps({"player_id": player_id}) + '\n').encode('utf-8'))
@@ -65,14 +57,8 @@ def handle_client(conn, player_id):
             if not raw_data:
                 break
 
-            client_buffer += raw_data.decode('utf-8')
-            
-            # FIX 2: Process incoming stream chunks divided by newlines
-            while "\n" in client_buffer:
-                packet_str, client_buffer = client_buffer.split("\n", 1)
-                packet_str = packet_str.strip()
-                if not packet_str:
-                    continue
+            data = json.loads(raw_data.decode('utf-8'))
+            msg_type = data.get("type")
 
             if msg_type == "restart_request":
                 with game_state_lock:
@@ -82,14 +68,8 @@ def handle_client(conn, player_id):
                         c.sendall((json.dumps({"type": "restart_request"}) + '\n').encode('utf-8'))
                 continue
 
-                # Handle Rematch requests
-                if msg_type == "restart_request":
-                    with game_state_lock:
-                        reset_shared_game()
-                    with clients_lock:
-                        for c in connections:
-                            send_json(c, {"type": "restart_request"})
-                    continue
+            if "column" in data:
+                col = data["column"]
 
                 with game_state_lock:
                     if not game_active:
@@ -100,10 +80,12 @@ def handle_client(conn, player_id):
                         conn.sendall((json.dumps({"type": "error", "message": "Not your turn!"}) + '\n').encode('utf-8'))
                         continue
 
-                        if has_won:
-                            game_active = False
-                        else:
-                            current_turn = (current_turn + 1) % 2
+                    # validate space on shared board
+                    row = -1
+                    for r in range(6):
+                        if shared_board[r][col] == -1:
+                            row = r
+                            break
 
                     if row == -1:
                         # column was full
@@ -140,7 +122,7 @@ def handle_client(conn, player_id):
     with clients_lock:
         if conn in connections:
             connections.remove(conn)
-        # Inform remaining active clients about the drop
+        # tell about the disconnect
         for c in connections:
             try:
                 c.sendall((json.dumps({"type": "disconnect"}) + '\n').encode('utf-8'))
