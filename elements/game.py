@@ -53,11 +53,6 @@ class GameUI:
         self.screen.blit(text, (50, 10))
         pygame.display.flip()
     
-    def draw_player_won(self, winner, local_player_id):
-        pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
-        
-        
-
     def draw_win_screen(self, winner, local_player_id):
         # 1. Clean the upper row spacing area
         pygame.draw.rect(self.screen, (255,255,255), [0, 0, 800, 100], 0)
